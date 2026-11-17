@@ -121,7 +121,7 @@ def test_second_unknown_email_throttled(monkeypatch, cfg, tmp_path):
     assert len(sent) == 1
 
     raw2 = _raw("inconnu@example.org", "Deux")
-    main.handle_message(_client_for(raw2), conn, cfg, 2, dry_run=False, at_seed=False)
+    main.handle_message(_client_for(raw2, uid=2), conn, cfg, 2, dry_run=False, at_seed=False)
 
     assert len(sent) == 1
     row = conn.execute("SELECT status FROM received WHERE uid=2").fetchone()
