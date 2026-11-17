@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import yaml
 from dotenv import load_dotenv
@@ -29,12 +29,7 @@ class _Node:
 
 
 class Config(_Node):
-    """Configuration applicative.
-
-    Attributs dérivés pratiques :
-      - whitelist_lower: adresses en minuscules
-      - system_prompt / llm_system_prompt
-    """
+    """Configuration applicative."""
 
     @property
     def whitelist_lower(self) -> List[str]:
@@ -51,6 +46,12 @@ class Config(_Node):
     @property
     def kb_format(self) -> str:
         return str(self.llm.tools.get("kb_format", "md")).lower()
+
+    @property
+    def logo_path(self) -> Optional[str]:
+        """Chemin du logo inline, ou None pour le défaut (à côté du template)."""
+        configured = self.templates.get("logo")
+        return str(configured) if configured else None
 
     @property
     def throttle_seconds(self) -> int:

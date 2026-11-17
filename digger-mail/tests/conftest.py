@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict
+from typing import Any
 
 import pytest
 
@@ -16,51 +16,13 @@ def _read_fixture(name: str) -> bytes:
         return fh.read()
 
 
-class FakeCfg:
-    """Config minimale pour les tests, accès par attributs."""
-
-    def __init__(self, **overrides: Any) -> None:
-        self.mail_domain = "diggerradio.com"
-        self.whitelist = ["partenaire@example.com"]
-        self.templates = _Templates()
-        self.limits = _Limits()
-        self.llm = _LLM()
-
-        env = _Env()
-        self.env = {
-            "OVH_MAILTEST_USER": env.user,
-            "OVH_MAILTEST_PASSWORD": env.password,
-            "LLM_API_KEY": "test-key",
-        }
-        for key, value in overrides.items():
-            setattr(self, key, value)
-
-    @property
-    def whitelist_lower(self):
-        return [w.lower() for w in self.whitelist]
-
-    @property
-    def llm_system_prompt(self) -> str:
-        return "Tu es l'assistant de DiggerRadio."
-
-    @property
-    def kb_path(self) -> str:
-        return self.llm.tools.get("kb_path", "knowledge_base.md")
-
-    @property
-    def kb_format(self) -> str:
-        return "md"
-
-    @property
-    def throttle_seconds(self) -> int:
-        return self.limits.throttle_hours * 3600
-
-
 class _Templates:
     def __init__(self) -> None:
-        base = os.path.dirname(__file__)
-        self.reply = os.path.join(base, "templates", "reply.html")
-        self.refuse = os.path.join(base, "templates", "refuse.html")
+        tests_dir = os.path.dirname(os.path.abspath(__file__))
+        package_dir = os.path.dirname(tests_dir)
+        self.reply = os.path.join(package_dir, "templates", "reply.html")
+        self.refuse = os.path.join(package_dir, "templates", "refuse.html")
+        self.logo = os.path.join(package_dir, "templates", "logo-digger-radio.png")
 
 
 class _Limits:
@@ -69,9 +31,9 @@ class _Limits:
     throttle_hours = 24
 
 
-class _Env:
-    user = "mailtest@diggerradio.com"
-    password = "secret"
+class _Smtp:
+    host = "ssl0.ovh.net"
+    port = 465
 
 
 class _Tools(dict):
@@ -85,6 +47,7 @@ class _LLM:
         self.temperature = 0.3
         self.max_tokens = 800
         self.timeout_seconds = 60
+        self.system_prompt = "Tu es l'assistant de DiggerRadio."
         self.tools = _Tools(
             enabled=True,
             kb_path="knowledge_base.md",
@@ -92,6 +55,45 @@ class _LLM:
             max_iterations=3,
             max_result_chars=20000,
         )
+
+
+class FakeCfg:
+    """Config minimale pour les tests, accès par attributs."""
+
+    def __init__(self, **overrides: Any) -> None:
+        self.mail_domain = "diggerradio.com"
+        self.whitelist = ["partenaire@example.com"]
+        self.templates = _Templates()
+        self.limits = _Limits()
+        self.smtp = _Smtp()
+        self.llm = _LLM()
+        self.env = {
+            "OVH_MAILTEST_USER": "mailtest@diggerradio.com",
+            "OVH_MAILTEST_PASSWORD": "secret",
+            "LLM_API_KEY": "test-key",
+        }
+        for key, value in overrides.items():
+            setattr(self, key, value)
+
+    @property
+    def whitelist_lower(self):
+        return [str(w).lower() for w in self.whitelist]
+
+    @property
+    def llm_system_prompt(self) -> str:
+        return str(self.llm.system_prompt)
+
+    @property
+    def kb_path(self) -> str:
+        return str(self.llm.tools.get("kb_path", "knowledge_base.md"))
+
+    @property
+    def kb_format(self) -> str:
+        return str(self.llm.tools.get("kb_format", "md")).lower()
+
+    @property
+    def throttle_seconds(self) -> int:
+        return int(self.limits.throttle_hours) * 3600
 
 
 @pytest.fixture
