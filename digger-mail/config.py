@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 import yaml
 from dotenv import load_dotenv
