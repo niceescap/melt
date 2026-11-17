@@ -81,7 +81,7 @@ def _safe_idle_done(client: IMAPClient) -> None:
 
 def search_uids_after(client: IMAPClient, last_uid_seen: int) -> List[int]:
     """Retourne les UID strictement supérieurs à last_uid_seen, triés."""
-    criteria = [f"UID {last_uid_seen + 1}:*"] if last_uid_seen else ["UID 1:*"]
+    criteria = [f"{last_uid_seen + 1}:*"] if last_uid_seen else ["1:*"]
     try:
         uids = client.search(criteria)
     except Exception as exc:
