@@ -1,0 +1,27 @@
+# Secrets et configuration locale
+.env
+config.yaml
+
+# Base SQLite locale
+*.sqlite3
+*.sqlite
+*.db
+
+# Base de connaissances réelle (l'exemple est versionné)
+knowledge_base.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.venv/
+venv/
+env/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+
+# Divers
+.DS_Store
+*.log
