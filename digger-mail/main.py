@@ -60,8 +60,6 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def seed_initial(conn, cfg: Config) -> None:
     """Seed unique de last_uid_seen avec le MAX(UID) de la boîte."""
-    import imapclient
-
     client = imap_listener.connect(
         cfg.imap.host, cfg.imap.port,
         cfg.env["OVH_MAILTEST_USER"], cfg.env["OVH_MAILTEST_PASSWORD"],
