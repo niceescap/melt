@@ -1,7 +1,7 @@
 # DiggerMail
 
-Application Python synchrone et autonome qui se connecte en IMAP IDLE à une
-boîte mail dédiée, détecte les nouveaux messages, filtre, et répond
+Application Python synchrone et autonome qui se connecte en IMAP à une
+boîte mail dédiée, détecte les nouveaux messages (polling toutes les 5 s), filtre, et répond
 automatiquement :
 
 - expéditeur **whitelisté** → réponse générée par un LLM (outil `read_kb` pour
