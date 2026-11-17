@@ -152,9 +152,15 @@ def test_llm_error_marks_failed(monkeypatch, cfg, tmp_path):
 def test_kb_absent_still_replies(monkeypatch, cfg, tmp_path):
     conn = _use_db(monkeypatch, tmp_path)
 
+    # KB absente : l'outil renvoie une erreur texte au LLM, qui répond quand même
+    # en signalant qu'il n'a pas l'information. Aucun appel réseau ici.
     cfg.llm.tools["kb_path"] = str(tmp_path / "absent.md")
     sent = []
     monkeypatch.setattr(main.sender, "send", lambda *a, **k: sent.append(k) or "<mid@x>")
+    monkeypatch.setattr(
+        main.llm_handler, "call_llm",
+        lambda cfg, prompt: ("Je n'ai pas cette information dans ma base.", []),
+    )
 
     raw = _raw("partenaire@example.com", "Question DiggerRadio")
     main.handle_message(_client_for(raw), conn, cfg, 1, dry_run=False, at_seed=False)
