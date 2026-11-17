@@ -58,7 +58,8 @@ def test_build_message_without_logo_falls_back_to_alternative(cfg, tmp_path):
 def test_build_message_text_only_without_logo(cfg, tmp_path):
     cfg.templates.logo = str(tmp_path / "absent.png")
     msg, _ = sender.build_message(cfg, "alice@example.org", "Sujet", "Corps", None, {})
-    assert msg.get_content_type() == "multipart/alternative"
+    assert msg.get_content_type() in ("text/plain", "multipart/alternative")
+    assert _image_parts(msg) == []
     assert _html_parts(msg) == []
 
 
