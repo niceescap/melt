@@ -23,10 +23,10 @@ def test_build_prompt_reply():
 
 
 def test_build_prompt_truncation():
-    body = "a" * 500
+    body = "x" * 500
     prompt = llm_handler.build_prompt(body, is_reply=False, max_body_chars=100)
     assert "[…tronqué]" in prompt
-    assert prompt.count("a") == 100
+    assert prompt.count("x") == 100
 
 
 def test_build_prompt_keeps_quotes():
