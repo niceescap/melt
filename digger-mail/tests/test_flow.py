@@ -24,6 +24,7 @@ def _raw(from_addr, subject, body="Bonjour", extra=""):
         f"From: {from_addr}\r\n"
         f"Subject: {subject}\r\n"
         "Message-ID: <new@example.org>\r\n"
+        "Return-Path: <bounce@example.org>\r\n"
         + extra
         + "\r\n"
         + body
