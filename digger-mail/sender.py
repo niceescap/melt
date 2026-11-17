@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from email.message import EmailMessage
 from email.utils import make_msgid
 from typing import Any, Dict, Optional, Tuple
