@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
-"""DiggerMail — boucle principale IMAP IDLE + réponse LLM.
+"""DiggerMail — boucle principale IMAP polling + réponse LLM.
 
-Ssynchrone, mono-thread. Un email à la fois, puis retour à l'IDLE.
+Synchrone, mono-thread. Un email à la fois.
 """
 
 from __future__ import annotations
@@ -74,8 +74,6 @@ def seed_initial(conn, cfg: Config) -> None:
         imap_listener.logout(client)
 
 
-# ----------------------------------------------------------------- traitement
-
 def handle_message(client, conn, cfg: Config, uid: int, dry_run: bool,
                    at_seed: bool) -> bool:
     """Traite un UID. Retourne True si last_uid_seen doit être mis à jour."""
@@ -88,12 +86,10 @@ def handle_message(client, conn, cfg: Config, uid: int, dry_run: bool,
     log.info("Message reçu uid=%s from=%s subject=%r",
              uid, parsed["from_addr"], parsed["subject"])
 
-    # Insertion en base (statut pending) avant traitement.
     state.insert_pending(conn, uid, parsed.get("message_id"),
                          parsed.get("from_addr"), parsed.get("subject"))
     state.mark(conn, uid, "processing")
 
-    # --- filtres anti-boucle ---
     if filters.is_bounce(parsed):
         log.warning("Filtre bounce uid=%s", uid)
         state.mark(conn, uid, "filtered")
@@ -117,7 +113,6 @@ def handle_message(client, conn, cfg: Config, uid: int, dry_run: bool,
     from_addr = parsed.get("from_addr") or ""
     whitelisted = filters.is_whitelisted(parsed, cfg.whitelist_lower)
 
-    # --- branche hors whitelist : refus + throttle ---
     if not whitelisted:
         if filters.is_throttled(conn, from_addr, cfg.throttle_seconds):
             log.warning("Throttle uid=%s from=%s", uid, from_addr)
@@ -133,7 +128,6 @@ def handle_message(client, conn, cfg: Config, uid: int, dry_run: bool,
         state.mark(conn, uid, "replied", reply_body=text_body, replied=True)
         return True
 
-    # --- branche whitelistée : LLM ---
     try:
         prompt = llm_handler.build_prompt(
             parsed["body_text"], mail_parser.is_reply(parsed),
@@ -157,12 +151,11 @@ def handle_message(client, conn, cfg: Config, uid: int, dry_run: bool,
     return True
 
 
-def run_idle_cycle(client, conn, cfg: Config, shutdown: Shutdown, dry_run: bool) -> None:
-    """Un cycle : attente IDLE, traitement des UID, mise à jour du curseur."""
+def run_cycle(client, conn, cfg: Config, shutdown: Shutdown, dry_run: bool) -> None:
+    """Un cycle : attente messages, traitement, mise à jour du curseur."""
     last_uid = state.get_last_uid(conn)
-    uids = imap_listener.idle_wait(client, last_uid, shutdown)
+    uids = imap_listener.wait_for_messages(client, last_uid, shutdown)
 
-    at_seed = False
     for uid in sorted(uids):
         if shutdown.is_set():
             log.info("Arrêt demandé — traitement interrompu à l'uid %s", uid)
@@ -175,13 +168,11 @@ def run_idle_cycle(client, conn, cfg: Config, shutdown: Shutdown, dry_run: bool)
             last_uid = uid
             continue
 
-        updated = handle_message(client, conn, cfg, uid, dry_run, at_seed)
+        updated = handle_message(client, conn, cfg, uid, dry_run, at_seed=False)
         if updated:
             state.set_last_uid(conn, uid)
             last_uid = uid
 
-
-# ----------------------------------------------------------------------- main
 
 def run(argv: Optional[list[str]] = None) -> int:
     args = parse_args(argv)
@@ -211,11 +202,11 @@ def run(argv: Optional[list[str]] = None) -> int:
                     cfg.env["OVH_MAILTEST_USER"], cfg.env["OVH_MAILTEST_PASSWORD"],
                     cfg.imap.get("mailbox", "INBOX"),
                 )
-                run_idle_cycle(client, conn, cfg, shutdown, args.dry_run)
+                run_cycle(client, conn, cfg, shutdown, args.dry_run)
                 imap_listener.logout(client)
                 client = None
                 backoff_index = 0
-            except Exception as exc:  # déconnexion IMAP ou erreur de cycle
+            except Exception as exc:
                 log.error("Erreur de cycle IMAP: %s", exc)
                 if client is not None:
                     try:
@@ -230,13 +221,7 @@ def run(argv: Optional[list[str]] = None) -> int:
                 log.warning("Reconnexion dans %ss", delay)
                 _interruptible_sleep(delay, shutdown)
 
-        # Sortie propre.
-        log.info("Arrêt demandé — idle_done, logout, fermeture SQLite, exit 0")
-        if client is not None:
-            try:
-                imap_listener.logout(client)
-            except Exception:
-                pass
+        log.info("Arrêt demandé — fermeture SQLite, exit 0")
         conn.commit()
         conn.close()
         return 0
