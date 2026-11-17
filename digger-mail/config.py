@@ -53,6 +53,12 @@ class Config(_Node):
         return str(self.llm.tools.get("kb_format", "md")).lower()
 
     @property
+    def logo_path(self) -> Optional[str]:
+        """Chemin du logo inline, ou None pour le défaut (à côté du template)."""
+        configured = self.templates.get("logo")
+        return str(configured) if configured else None
+
+    @property
     def throttle_seconds(self) -> int:
         return int(self.limits.throttle_hours) * 3600
 
