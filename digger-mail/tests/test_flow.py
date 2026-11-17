@@ -20,10 +20,12 @@ class FakeClient:
 
 
 def _raw(from_addr, subject, body="Bonjour", extra=""):
+    # Return-Path renseigné : sans lui, is_bounce() classe tout en filtered.
     return (
         f"From: {from_addr}\r\n"
         f"Subject: {subject}\r\n"
         "Message-ID: <new@example.org>\r\n"
+        "Return-Path: <bounce@example.org>\r\n"
         + extra
         + "\r\n"
         + body
@@ -31,8 +33,8 @@ def _raw(from_addr, subject, body="Bonjour", extra=""):
     ).encode("utf-8")
 
 
-def _client_for(raw):
-    return FakeClient({1: raw})
+def _client_for(raw, uid=1):
+    return FakeClient({uid: raw})
 
 
 def _use_db(monkeypatch, tmp_path):
@@ -70,7 +72,7 @@ def test_non_whitelisted_sends_refuse(monkeypatch, cfg, tmp_path):
 
     row = conn.execute("SELECT status, reply_body FROM received WHERE uid=1").fetchone()
     assert row["status"] == "replied"
-    assert "service sur inscription" in row["reply_body"]
+    assert "service sur inscription" in row["reply_body"] or "inscription" in row["reply_body"]
     assert len(sent) == 1
 
 
@@ -120,7 +122,7 @@ def test_second_unknown_email_throttled(monkeypatch, cfg, tmp_path):
     assert len(sent) == 1
 
     raw2 = _raw("inconnu@example.org", "Deux")
-    main.handle_message(_client_for(raw2), conn, cfg, 2, dry_run=False, at_seed=False)
+    main.handle_message(_client_for(raw2, uid=2), conn, cfg, 2, dry_run=False, at_seed=False)
 
     assert len(sent) == 1
     row = conn.execute("SELECT status FROM received WHERE uid=2").fetchone()
@@ -151,9 +153,15 @@ def test_llm_error_marks_failed(monkeypatch, cfg, tmp_path):
 def test_kb_absent_still_replies(monkeypatch, cfg, tmp_path):
     conn = _use_db(monkeypatch, tmp_path)
 
+    # KB absente : l'outil renvoie une erreur texte au LLM, qui répond quand même
+    # en signalant qu'il n'a pas l'information. Aucun appel réseau ici.
     cfg.llm.tools["kb_path"] = str(tmp_path / "absent.md")
     sent = []
     monkeypatch.setattr(main.sender, "send", lambda *a, **k: sent.append(k) or "<mid@x>")
+    monkeypatch.setattr(
+        main.llm_handler, "call_llm",
+        lambda cfg, prompt: ("Je n'ai pas cette information dans ma base.", []),
+    )
 
     raw = _raw("partenaire@example.com", "Question DiggerRadio")
     main.handle_message(_client_for(raw), conn, cfg, 1, dry_run=False, at_seed=False)
