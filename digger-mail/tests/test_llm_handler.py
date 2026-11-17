@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 
 import pytest
 
@@ -38,7 +39,7 @@ def test_build_prompt_keeps_quotes():
 
 def test_execute_tool_unknown():
     out = llm_handler.execute_tool(cfg=_FakeCfg(), name="unknown_tool")
-    assert "inconnu" in out.lower() or "erreur" in out.lower()
+    assert "erreur" in out.lower()
 
 
 def test_execute_tool_reads_kb(tmp_path, cfg):
@@ -150,7 +151,6 @@ def test_call_llm_with_tool_call(monkeypatch, cfg, tmp_path):
     assert trace == [{"name": "read_kb", "result_chars": trace[0]["result_chars"]}]
     assert trace[0]["result_chars"] > 0
     assert calls["n"] == 2
-    # Le second appel doit contenir le message tool
     assert any(m.get("role") == "tool" for m in calls["payloads"][1]["messages"])
 
 
@@ -163,7 +163,11 @@ def test_call_llm_http_error(monkeypatch, cfg):
         llm_handler.call_llm(cfg, "prompt")
 
 
-def test_call_llm_max_iterations(monkeypatch, cfg):
+def test_call_llm_max_iterations(monkeypatch, cfg, tmp_path):
+    kb = tmp_path / "kb.md"
+    kb.write_text("contenu", encoding="utf-8")
+    cfg.llm.tools["kb_path"] = str(kb)
+
     tool_resp = {
         "choices": [
             {
@@ -181,12 +185,6 @@ def test_call_llm_max_iterations(monkeypatch, cfg):
             }
         ]
     }
-    kb = cfg.llm.tools["kb_path"]
-    import os
-
-    if not os.path.exists(kb):
-        # KB absente : l'outil renvoie une erreur texte, le LLM reçoit ce message.
-        pass
     _patch_post(monkeypatch, [tool_resp])
     with pytest.raises(llm_handler.LLMError):
         llm_handler.call_llm(cfg, "prompt")
@@ -206,7 +204,3 @@ class _FakeCfg:
     class llm:
         class tools:
             max_result_chars = 20000
-
-
-class _FakeTools:
-    max_result_chars = 20000
