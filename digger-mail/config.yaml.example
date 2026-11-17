@@ -1,0 +1,43 @@
+imap:
+  host: ssl0.ovh.net
+  port: 993
+  mailbox: INBOX
+smtp:
+  host: ssl0.ovh.net
+  port: 465
+account: ovh-mailtest
+mail_domain: diggerradio.com
+
+whitelist:
+  - partenaire1@example.com
+  - partenaire2@example.com
+
+llm:
+  endpoint: https://api.openai.com/v1/chat/completions
+  model: gpt-4o-mini
+  temperature: 0.3
+  max_tokens: 800
+  timeout_seconds: 60
+  system_prompt: |
+    Tu es l'assistant de DiggerRadio. Tu réponds aux emails en français, de
+    manière concise et chaleureuse. Quand la question porte sur DiggerRadio
+    (services, tarification, conditions, fonctionnalités), tu dois consulter la
+    base de connaissances via l'outil read_kb avant de répondre.
+  tools:
+    enabled: true
+    kb_path: knowledge_base.md
+    kb_format: md
+    max_iterations: 3
+    max_result_chars: 20000
+
+limits:
+  max_body_chars: 10000
+  fresh_message_seconds: 90
+  throttle_hours: 24
+
+templates:
+  reply: templates/reply.html
+  refuse: templates/refuse.html
+
+logging:
+  level: INFO

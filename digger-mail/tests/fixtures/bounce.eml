@@ -1,0 +1,10 @@
+From: MAILER-DAEMON@mail.example.org
+To: mailtest@diggerradio.com
+Subject: Undelivered Mail Returned to Sender
+Return-Path: <>
+Auto-Submitted: auto-replied
+Content-Type: text/plain; charset=utf-8
+
+This is the mail system at host mail.example.org.
+
+<inconnu@example.org>: host unreachable.

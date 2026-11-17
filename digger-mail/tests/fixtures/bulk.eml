@@ -1,0 +1,8 @@
+From: Newsletter <news@example.net>
+To: mailtest@diggerradio.com
+Subject: Infolettre novembre
+Precedence: bulk
+List-Unsubscribe: <https://example.net/unsub>
+Content-Type: text/plain; charset=utf-8
+
+Les nouveautés du mois.

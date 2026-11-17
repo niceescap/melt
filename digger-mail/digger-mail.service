@@ -1,0 +1,17 @@
+[Unit]
+Description=DiggerMail - repond aux emails via LLM
+After=network-online.target
+
+[Service]
+Type=simple
+User=nicee
+WorkingDirectory=/srv/vrac-tests
+EnvironmentFile=/srv/vrac-tests/.env
+ExecStart=/usr/bin/python3 /srv/vrac-tests/main.py --config /srv/vrac-tests/config.yaml
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
