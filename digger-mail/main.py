@@ -66,7 +66,7 @@ def seed_initial(conn, cfg: Config) -> None:
         cfg.imap.get("mailbox", "INBOX"),
     )
     try:
-        uids = client.search(["UID 1:*"])
+        uids = client.search(["1:*"])
         max_uid = max(int(u) for u in uids) if uids else 0
         state.set_last_uid(conn, max_uid)
         log.info("Seed initial: last_uid_seen=%s", max_uid)
