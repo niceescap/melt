@@ -128,7 +128,7 @@ def test_call_llm_accepts_list_content(monkeypatch, cfg):
     payload = {
         "choices": [
             {
-                "message": {"role": "assistant", "content": [{"type": "text", "text": "Bonjour"})},
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Bonjour"}]},
                 "finish_reason": "stop",
             }
         ]
