@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Callable, List
+from typing import List
 
 from imapclient import IMAPClient
 
@@ -29,7 +29,8 @@ def idle_wait(client: IMAPClient, last_uid_seen: int,
     """Entre en IDLE, attend un EXISTS, sort de l'IDLE, retourne les UID > last.
 
     ``shutdown_flag`` peut être un objet avec ``is_set()`` ou un simple booléen
-    évalué à chaque tour de boucle.
+    évalué à chaque tour de boucle. En sortie (signalement serveur ou arrêt
+    demandé), on quitte systématiquement l'IDLE proprement via ``idle_done``.
     """
     client.idle()
     log.info("IDLE engagé (last_uid_seen=%s)", last_uid_seen)
@@ -40,8 +41,8 @@ def idle_wait(client: IMAPClient, last_uid_seen: int,
                 # Tour de surveillance : on revérifie le flag sans quitter l'IDLE.
                 deadline = time.monotonic() + poll_seconds
             client.idle_check(timeout=5)
-            # idle_check lève une exception si le serveur a fermé la session ;
-            # dans ce cas on laisse remonter pour que main.py gère le backoff.
+            # idle_check lève une exception si le serveur ferme la session ;
+            # on laisse remonter pour que main.py gère le backoff.
             if _server_signaled(client):
                 break
     finally:
