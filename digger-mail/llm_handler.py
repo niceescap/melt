@@ -13,6 +13,11 @@ log = logging.getLogger(__name__)
 MAX_BODY_PROMPT = 10000
 TOOL_NAME = "read_kb"
 
+# Nombre de relances quand le modèle répond un contenu vide sans tool_call.
+# Distinct du budget d'itérations d'outils : une réponse vide n'est pas un tour
+# d'outil et ne doit pas consommer le budget de max_iterations.
+EMPTY_CONTENT_RETRIES = 1
+
 READ_KB_TOOL_SCHEMA: Dict[str, Any] = {
     "type": "function",
     "function": {
@@ -28,7 +33,7 @@ READ_KB_TOOL_SCHEMA: Dict[str, Any] = {
 
 
 class LLMError(RuntimeError):
-    """Erreur LLM : timeout, HTTP, ou aucune réponse texte exploitable."""
+    """Erreur LLM : timeout, HTTP, réponse vide ou aucune réponse exploitable."""
 
 
 def build_prompt(body_text: str, is_reply: bool, max_body_chars: int = MAX_BODY_PROMPT) -> str:
@@ -78,11 +83,29 @@ def execute_tool(cfg: Any, name: str, arguments: Dict[str, Any] | None = None) -
 
 # ------------------------------------------------------------------ call_llm
 
+def _extract_text(message: Dict[str, Any]) -> str:
+    """Contenu texte du message (certains modèles renvoient une liste)."""
+    content = message.get("content")
+    if isinstance(content, list):
+        # Format OpenAI multi-parties : on concatène les morceaux texte.
+        chunks = [
+            str(part.get("text", ""))
+            for part in content
+            if isinstance(part, dict) and part.get("type") in (None, "text")
+        ]
+        content = "".join(chunks)
+    return (content or "").strip()
+
+
 def call_llm(cfg: Any, prompt: str) -> Tuple[str, List[Dict[str, Any]]]:
     """Boucle d'appel LLM avec tools.
 
     Retourne (texte_final, trace) où trace est une liste de dicts
     {name, result_chars}.
+
+    Deux budgets séparés :
+      - ``max_iterations`` : tours d'outils (lecture KB).
+      - ``EMPTY_CONTENT_RETRIES`` : relances sur réponse vide.
     """
     llm = cfg.llm
     headers = {
@@ -99,7 +122,10 @@ def call_llm(cfg: Any, prompt: str) -> Tuple[str, List[Dict[str, Any]]]:
     max_iterations = int(llm.tools.get("max_iterations", 3))
     trace: List[Dict[str, Any]] = []
 
-    for iteration in range(max_iterations + 1):
+    tool_iterations = 0
+    empty_retries = 0
+
+    while True:
         payload = {
             "model": llm.model,
             "messages": messages,
@@ -121,23 +147,59 @@ def call_llm(cfg: Any, prompt: str) -> Tuple[str, List[Dict[str, Any]]]:
         except (requests.RequestException, ValueError) as exc:
             raise LLMError(f"Échec appel LLM: {exc}") from exc
 
-        choice = (data.get("choices") or [{}])[0]
+        choices = data.get("choices") or []
+        if not choices:
+            raise LLMError(f"Réponse LLM sans choix : {data}")
+
+        choice = choices[0]
         message = choice.get("message") or {}
+        finish_reason = choice.get("finish_reason")
         tool_calls = message.get("tool_calls") or []
-        content = message.get("content")
+        text = _extract_text(message)
+        reasoning = message.get("reasoning") or message.get("reasoning_content") or ""
+        usage = data.get("usage") or {}
 
         if not tool_calls:
-            if content and content.strip():
-                return content.strip(), trace
-            if iteration >= max_iterations:
-                break
-            log.warning("Réponse LLM vide sans tool_calls, itération %d", iteration)
-            continue
+            if text:
+                log.debug(
+                    "Réponse LLM (%d chars, finish_reason=%s, tokens=%s/%s)",
+                    len(text), finish_reason,
+                    usage.get("completion_tokens"), usage.get("total_tokens"),
+                )
+                return text, trace
 
-        if iteration >= max_iterations:
+            # Réponse vide : on distingue les cas pour un diagnostic utile.
+            if finish_reason == "length":
+                raise LLMError(
+                    "Réponse LLM tronquée (finish_reason=length) : le budget "
+                    f"max_tokens={llm.max_tokens} a été consommé avant toute "
+                    "réponse. Augmente max_tokens dans config.yaml."
+                )
+            if finish_reason == "content_filter":
+                raise LLMError("Réponse LLM bloquée par le filtre de contenu (content_filter).")
+            if message.get("refusal"):
+                raise LLMError(f"Le LLM a refusé de répondre : {message['refusal']}")
+
+            log.warning(
+                "Réponse LLM vide (finish_reason=%s, reasoning=%d chars, "
+                "completion_tokens=%s, retry %d/%d)",
+                finish_reason, len(reasoning), usage.get("completion_tokens"),
+                empty_retries, EMPTY_CONTENT_RETRIES,
+            )
+            if reasoning:
+                log.debug("Extrait raisonnement: %s", reasoning[:300])
+
+            if empty_retries < EMPTY_CONTENT_RETRIES:
+                empty_retries += 1
+                continue
+            raise LLMError("Réponse LLM vide après relance (aucun texte exploitable).")
+
+        # --- présence de tool_calls ---
+        if tool_iterations >= max_iterations:
             log.warning("max_tool_iterations atteint (%d)", max_iterations)
             break
 
+        tool_iterations += 1
         messages.append(message)
         for call in tool_calls:
             fn = call.get("function") or {}
