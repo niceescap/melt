@@ -75,11 +75,12 @@ def test_execute_tool_json_valid(tmp_path, cfg):
 
 def test_execute_tool_truncates(tmp_path, cfg):
     kb = tmp_path / "kb.md"
-    kb.write_text("x" * 5000, encoding="utf-8")
+    kb.write_text("z" * 5000, encoding="utf-8")
     cfg.llm.tools["kb_path"] = str(kb)
     cfg.llm.tools["max_result_chars"] = 100
     out = llm_handler.execute_tool(cfg, "read_kb")
     assert "[…tronqué]" in out
+    assert out.count("z") == 100
 
 
 # --------------------------------------------------------------- call_llm
