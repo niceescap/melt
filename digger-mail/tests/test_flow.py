@@ -32,8 +32,8 @@ def _raw(from_addr, subject, body="Bonjour", extra=""):
     ).encode("utf-8")
 
 
-def _client_for(raw):
-    return FakeClient({1: raw})
+def _client_for(raw, uid=1):
+    return FakeClient({uid: raw})
 
 
 def _use_db(monkeypatch, tmp_path):
