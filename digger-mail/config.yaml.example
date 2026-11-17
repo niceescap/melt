@@ -13,9 +13,11 @@ whitelist:
   - partenaire2@example.com
 
 llm:
-  endpoint: https://api.openai.com/v1/chat/completions
+  endpoint: https://openrouter.ai/api/v1/chat/completions
   model: gpt-4o-mini
   temperature: 0.3
+  # Prévoir large : un modèle "raisonnement" consomme ce budget avant d'écrire
+  # sa réponse. 800 est trop juste ; 2000-4000 est un point de départ sûr.
   max_tokens: 800
   timeout_seconds: 60
   system_prompt: |
@@ -38,6 +40,9 @@ limits:
 templates:
   reply: templates/reply.html
   refuse: templates/refuse.html
+  # Logo affiché en inline dans les deux templates (cid:logo-digger-radio).
+  # Optionnel : si le fichier est absent, l'email part quand même, sans image.
+  logo: templates/logo-digger-radio.png
 
 logging:
   level: INFO
