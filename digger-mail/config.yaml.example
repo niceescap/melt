@@ -38,6 +38,9 @@ limits:
 templates:
   reply: templates/reply.html
   refuse: templates/refuse.html
+  # Logo affiché en inline dans les deux templates (cid:logo-digger-radio).
+  # Optionnel : si le fichier est absent, l'email part quand même, sans image.
+  logo: templates/logo-digger-radio.png
 
 logging:
   level: INFO
