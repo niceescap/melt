@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Envoi d'email SMTP OVH (module existant, adapté pour le daemon).
+"""Envoi d'email SMTP OVH.
 
-La fonction ``envoyer`` accepte désormais ``message_id`` et
-``extra_headers`` pour être réutilisée par sender.py. Les fonctions
-interactives (choisir_compte, saisir_*, main) sont conservées pour un
-usage manuel mais ne sont pas utilisées par le daemon.
+La fonction ``envoyer`` accepte ``message`` : un message déjà construit
+(EmailMessage ou MIMEMultipart), envoyé tel quel par sender.py pour préserver
+la structure MIME multipart/related et le logo inline.
+
+Les fonctions interactives (choisir_compte, saisir_*, main) sont conservées
+pour un usage manuel mais ne sont pas utilisées par le daemon.
 """
 
 from __future__ import annotations
@@ -16,7 +18,7 @@ import ssl
 import sys
 from dataclasses import dataclass
 from email.message import EmailMessage
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 DEFAULT_SMTP_HOST = "ssl0.ovh.net"
 DEFAULT_SMTP_PORT = 465
@@ -46,29 +48,37 @@ def envoyer(
     message_id: Optional[str] = None,
     extra_headers: Optional[Dict[str, str]] = None,
     timeout: int = 30,
+    message: Optional[Any] = None,
 ) -> str:
-    """Envoie un email. Retourne le Message-ID (généré s'il n'est pas fourni)."""
+    """Envoie un email. Retourne le Message-ID.
+
+    Si ``message`` est fourni, il est envoyé tel quel (structure MIME déjà
+    construite, logo inline inclus) et les paramètres de contenu sont ignorés.
+    """
     user = user or os.getenv("OVH_MAILTEST_USER", "")
     password = password or os.getenv("OVH_MAILTEST_PASSWORD", "")
 
-    msg = EmailMessage()
-    msg["From"] = user
-    msg["To"] = destinataire
-    msg["Subject"] = sujet
-    if message_id:
-        msg["Message-ID"] = message_id
-    for key, value in (extra_headers or {}).items():
-        msg[key] = value
-
-    msg.set_content(corps)
-    if html_body:
-        msg.add_alternative(html_body, subtype="html")
+    if message is None:
+        message = EmailMessage()
+        message["From"] = user
+        message["To"] = destinataire
+        message["Subject"] = sujet
+        if message_id:
+            message["Message-ID"] = message_id
+        for key, value in (extra_headers or {}).items():
+            message[key] = value
+        message.set_content(corps)
+        if html_body:
+            message.add_alternative(html_body, subtype="html")
 
     context = ssl.create_default_context()
     with smtplib.SMTP_SSL(smtp_host, smtp_port, context=context, timeout=timeout) as smtp:
         smtp.login(user, password)
-        smtp.send_message(msg)
-    return message_id or ""
+        smtp.send_message(message)
+
+    if message_id:
+        return message_id
+    return message.get("Message-ID") or ""
 
 
 # ------------------------------------------------------- fonctions interactives
