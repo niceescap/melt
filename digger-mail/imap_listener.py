@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import time
 from typing import List
 
 from imapclient import IMAPClient
@@ -26,24 +25,19 @@ def connect(host: str, port: int, user: str, password: str,
 
 def idle_wait(client: IMAPClient, last_uid_seen: int,
               shutdown_flag, poll_seconds: int = IDLE_POLL_SECONDS) -> List[int]:
-    """Entre en IDLE, attend un EXISTS, sort de l'IDLE, retourne les UID > last.
+    """Entre en IDLE, attend un signalement serveur, sort, retourne les UID > last.
 
-    ``shutdown_flag`` peut être un objet avec ``is_set()`` ou un simple booléen
-    évalué à chaque tour de boucle. En sortie (signalement serveur ou arrêt
-    demandé), on quitte systématiquement l'IDLE proprement via ``idle_done``.
+    Utilise idle_check(timeout=5) en boucle : à chaque appel, si le serveur
+    n'a rien à signaler, idle_check retourne au bout de 5 s et on revérifie le
+    flag shutdown. Si le serveur signale un changement, idle_check retourne
+    immédiatement et on sort de l'IDLE.
     """
     client.idle()
     log.info("IDLE engagé (last_uid_seen=%s)", last_uid_seen)
     try:
-        deadline = time.monotonic() + poll_seconds
         while not _is_shutdown(shutdown_flag):
-            if time.monotonic() >= deadline:
-                # Tour de surveillance : on revérifie le flag sans quitter l'IDLE.
-                deadline = time.monotonic() + poll_seconds
             client.idle_check(timeout=5)
-            # idle_check lève une exception si le serveur ferme la session ;
-            # on laisse remonter pour que main.py gère le backoff.
-            if _server_signaled(client):
+            if _has_new_messages(client, last_uid_seen):
                 break
     finally:
         _safe_idle_done(client)
@@ -64,19 +58,20 @@ def _is_shutdown(shutdown_flag) -> bool:
     return bool(getattr(shutdown_flag, "set", False))
 
 
-def _server_signaled(client: IMAPClient) -> bool:
-    """Vrai si des messages ont été signalés par le serveur."""
-    try:
-        return client.has_idle_data()
-    except AttributeError:  # pragma: no cover - versions anciennes
-        return False
-
-
 def _safe_idle_done(client: IMAPClient) -> None:
     try:
         client.idle_done()
     except Exception as exc:  # pragma: no cover - best effort
         log.warning("idle_done a échoué: %s", exc)
+
+
+def _has_new_messages(client: IMAPClient, last_uid_seen: int) -> bool:
+    """Vérifie rapidement s'il y a des UID > last_uid_seen."""
+    try:
+        uids = client.search([f"{last_uid_seen + 1}:*"])
+        return len(uids) > 0
+    except Exception:
+        return False
 
 
 def search_uids_after(client: IMAPClient, last_uid_seen: int) -> List[int]:
