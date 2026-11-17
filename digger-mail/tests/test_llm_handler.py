@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 
 import pytest
 
@@ -110,14 +109,33 @@ def _patch_post(monkeypatch, responses):
     return calls
 
 
+def _msg(content, finish_reason="stop", tool_calls=None, **extra):
+    message = {"role": "assistant", "content": content}
+    if tool_calls is not None:
+        message["tool_calls"] = tool_calls
+    message.update(extra)
+    return {"choices": [{"message": message, "finish_reason": finish_reason}]}
+
+
 def test_call_llm_simple(monkeypatch, cfg):
-    responses = [
-        {"choices": [{"message": {"role": "assistant", "content": "Bonjour !"}}]}
-    ]
-    _patch_post(monkeypatch, responses)
+    _patch_post(monkeypatch, [_msg("Bonjour !")])
     text, trace = llm_handler.call_llm(cfg, "Un prompt")
     assert text == "Bonjour !"
     assert trace == []
+
+
+def test_call_llm_accepts_list_content(monkeypatch, cfg):
+    payload = {
+        "choices": [
+            {
+                "message": {"role": "assistant", "content": [{"type": "text", "text": "Bonjour"})},
+                "finish_reason": "stop",
+            }
+        ]
+    }
+    _patch_post(monkeypatch, [payload])
+    text, _ = llm_handler.call_llm(cfg, "Un prompt")
+    assert text == "Bonjour"
 
 
 def test_call_llm_with_tool_call(monkeypatch, cfg, tmp_path):
@@ -125,26 +143,14 @@ def test_call_llm_with_tool_call(monkeypatch, cfg, tmp_path):
     kb.write_text("DiggerRadio: tarif 5 EUR/mois.", encoding="utf-8")
     cfg.llm.tools["kb_path"] = str(kb)
 
-    responses = [
+    tool_calls = [
         {
-            "choices": [
-                {
-                    "message": {
-                        "role": "assistant",
-                        "content": None,
-                        "tool_calls": [
-                            {
-                                "id": "call_1",
-                                "type": "function",
-                                "function": {"name": "read_kb", "arguments": "{}"},
-                            }
-                        ],
-                    }
-                }
-            ]
-        },
-        {"choices": [{"message": {"role": "assistant", "content": "Le tarif est de 5 EUR."}}]},
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "read_kb", "arguments": "{}"},
+        }
     ]
+    responses = [_msg(None, tool_calls=tool_calls), _msg("Le tarif est de 5 EUR.")]
     calls = _patch_post(monkeypatch, responses)
     text, trace = llm_handler.call_llm(cfg, "Question tarif DiggerRadio")
     assert text == "Le tarif est de 5 EUR."
@@ -163,37 +169,83 @@ def test_call_llm_http_error(monkeypatch, cfg):
         llm_handler.call_llm(cfg, "prompt")
 
 
+def test_call_llm_no_choices(monkeypatch, cfg):
+    _patch_post(monkeypatch, [{"choices": []}])
+    with pytest.raises(llm_handler.LLMError):
+        llm_handler.call_llm(cfg, "prompt")
+
+
 def test_call_llm_max_iterations(monkeypatch, cfg, tmp_path):
     kb = tmp_path / "kb.md"
     kb.write_text("contenu", encoding="utf-8")
     cfg.llm.tools["kb_path"] = str(kb)
 
-    tool_resp = {
-        "choices": [
-            {
-                "message": {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": "call_1",
-                            "type": "function",
-                            "function": {"name": "read_kb", "arguments": "{}"},
-                        }
-                    ],
-                }
-            }
-        ]
-    }
-    _patch_post(monkeypatch, [tool_resp])
+    tool_calls = [
+        {
+            "id": "call_1",
+            "type": "function",
+            "function": {"name": "read_kb", "arguments": "{}"},
+        }
+    ]
+    _patch_post(monkeypatch, [_msg(None, tool_calls=tool_calls)])
+    with pytest.raises(llm_handler.LLMError):
+        llm_handler.call_llm(cfg, "prompt")
+
+
+def test_call_llm_empty_then_success(monkeypatch, cfg):
+    """Une réponse vide est retentée une fois, puis exploitée si le retry répond."""
+    responses = [
+        _msg(""),
+        _msg("Réponse après relance"),
+    ]
+    calls = _patch_post(monkeypatch, responses)
+    text, trace = llm_handler.call_llm(cfg, "prompt")
+    assert text == "Réponse après relance"
+    assert trace == []
+    assert calls["n"] == 2
+
+
+def test_call_llm_empty_raises_after_retries(monkeypatch, cfg):
+    _patch_post(monkeypatch, [_msg(None)])
+    with pytest.raises(llm_handler.LLMError) as exc:
+        llm_handler.call_llm(cfg, "prompt")
+    assert "vide" in str(exc.value).lower()
+
+
+def test_call_llm_length_finish_reason(monkeypatch, cfg):
+    """finish_reason=length : erreur explicite, pas de relance inutile."""
+    _patch_post(monkeypatch, [_msg("", finish_reason="length")])
+    with pytest.raises(llm_handler.LLMError) as exc:
+        llm_handler.call_llm(cfg, "prompt")
+    assert "tronqu" in str(exc.value).lower()
+
+
+def test_call_llm_content_filter(monkeypatch, cfg):
+    _patch_post(monkeypatch, [_msg("", finish_reason="content_filter")])
+    with pytest.raises(llm_handler.LLMError) as exc:
+        llm_handler.call_llm(cfg, "prompt")
+    assert "filtre" in str(exc.value).lower()
+
+
+def test_call_llm_refusal(monkeypatch, cfg):
+    _patch_post(monkeypatch, [_msg(None, refusal="Je ne peux pas répondre.")])
+    with pytest.raises(llm_handler.LLMError) as exc:
+        llm_handler.call_llm(cfg, "prompt")
+    assert "refus" in str(exc.value).lower()
+
+
+def test_call_llm_reasoning_model_logged(monkeypatch, cfg, caplog):
+    """Un modèle à raisonnement qui ne laisse pas de texte échoue proprement."""
+    payload = _msg("", finish_reason="length", reasoning="long raisonnement interne")
+    payload["usage"] = {"completion_tokens": 800, "total_tokens": 5000}
+    _patch_post(monkeypatch, [payload])
     with pytest.raises(llm_handler.LLMError):
         llm_handler.call_llm(cfg, "prompt")
 
 
 def test_call_llm_tools_disabled(monkeypatch, cfg):
     cfg.llm.tools["enabled"] = False
-    responses = [{"choices": [{"message": {"role": "assistant", "content": "Réponse"}}]}]
-    calls = _patch_post(monkeypatch, responses)
+    calls = _patch_post(monkeypatch, [_msg("Réponse")])
     text, trace = llm_handler.call_llm(cfg, "prompt")
     assert text == "Réponse"
     assert trace == []
